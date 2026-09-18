@@ -1,0 +1,46 @@
+# AI Inference Engineer Learning and Benchmark Roadmap
+
+这是 16 周 AI Inference Engineer 学习、源码阅读、Benchmark 和开源复盘的统一仓库。
+
+路线依据：`AI_Inference_Engineer_16_Week_Roadmap.docx`。默认节奏为每周 12–15 小时；如果每周约 8 小时，则保持相同交付标准并延长到 22–24 周。
+
+## 当前状态
+
+- 阶段：第一阶段——建立共同语言
+- 当前周：Week 1——请求到输出的完整链路
+- 当前主题：Pipeline、Scheduler、Prefill/Decode、continuous batching
+- 下一项理论：KV cache 的作用、生命周期与显存量级
+- 尚未完成：可复现 baseline、环境记录、两个既有 PR 复盘
+
+## 每周闭环
+
+1. 用自己的话解释概念和代价。
+2. 在 SGLang Omni 或 SGLang 中定位真实代码。
+3. 设计只改变一个变量的实验。
+4. 保存环境、命令、原始数据和解释。
+5. 将结果沉淀为报告、PR 或求职证据。
+
+## 目录
+
+- `roadmap/`：16 周计划和阶段验收标准
+- `notes/`：概念、源码调用链、计算题和课堂复盘
+- `benchmarks/raw/`：原始实验输出，不手工修改
+- `benchmarks/processed/`：清洗数据、汇总表和图表
+- `deploy/`：容器、Kubernetes 与服务配置
+- `dashboards/`：Prometheus 和 Grafana 资产
+- `reports/`：周报、阶段报告和作品集材料
+- `pr-notes/`：Issue、PR 方案和 review 复盘
+
+## 工作在制品限制
+
+任何时刻只保留：一个主动学习模块、一个主动实验、一个主动 PR。等待 review 的 PR 不计入主动 PR。
+
+## Benchmark Definition of Done
+
+- 环境、commit 和模型版本可追踪
+- 启动、压测和数据处理命令可复制
+- 保存原始数据
+- 明确输入输出长度、并发或 request rate
+- 至少一次 warmup 和三次正式测量
+- 结论区分事实、解释与猜测
+- 写明局限和下一步最小验证实验

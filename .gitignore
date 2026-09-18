@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 原始实验文件默认保留目录，但大型临时产物应按实验选择性加入 Git
+benchmarks/raw/*.tmp
+benchmarks/raw/*.log
