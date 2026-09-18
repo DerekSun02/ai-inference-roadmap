@@ -88,3 +88,23 @@ waiting_queue = [D]
 1. `filter_batch()` 后：
 2. retract 后：
 3. D merge 后：
+
+## 练习答案
+
+假设 B 完成后被过滤，C 因 KV 压力被 retract 并重新排队，D 已经被选入独立 Prefill batch：
+
+```text
+1. filter_batch() 后
+   running_batch = [A, C]
+   waiting_queue = [D]
+
+2. retract C 后
+   running_batch = [A]
+   waiting/retry 中仍包含 C
+
+3. D 的 Prefill 完成并 merge 后
+   running_batch = [A, D]
+   waiting_queue = [C]
+```
+
+三步 `running_batch` 推演完全正确。需要额外记录的是 C 的去向：retract 表示暂时退出 Decode 并等待重试，不表示请求完成或丢失。C 在队列中的精确位置取决于实现的重排和优先级策略，因此不能仅凭这个抽象例子断言它一定排在队首或队尾。
