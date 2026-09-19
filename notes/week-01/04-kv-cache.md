@@ -189,3 +189,74 @@ q_D [1,d_k]
 ```
 
 MHA、MQA、GQA、RoPE 和完整 batch/head tensor shape 留在 Week 2 系统学习。
+
+## 为什么除以 sqrt d k
+
+假设一个 head 中 `q`、`k` 的每个分量近似独立，均值为 0、方差为 1：
+
+```text
+q·k = q_1k_1 + q_2k_2 + ... + q_dk k_dk
+```
+
+每一项的方差约为 1，`d_k` 项相加后的方差约为 `d_k`，标准差约为 `sqrt(d_k)`。维度越大，未缩放的 dot-product logits 典型幅度越大，softmax 越容易接近 one-hot，非最大项梯度很小，训练和数值都会更敏感。
+
+```text
+Var(q·k) ≈ d_k
+Std(q·k) ≈ sqrt(d_k)
+
+Var((q·k)/sqrt(d_k)) ≈ 1
+```
+
+因此除以 `sqrt(d_k)` 是把 logits 的典型尺度归一到大致不随 head dimension 增长。若除以 `d_k`，标准差会变成 `1/sqrt(d_k)`，维度越大 logits 反而越接近 0，softmax 容易过平。这里使用的是 dot product 的求和维度；更一般地说，应除以 `sqrt(inner_dimension)`。
+
+## 为什么 Q 的末维也写 d k
+
+更严格地可以先写：
+
+```text
+Q shape = [L_q, d_q]
+K shape = [L_k, d_k]
+```
+
+但要进行 `QKᵀ`：
+
+```text
+[L_q,d_q] × [d_k,L_k]
+```
+
+矩阵乘法要求内部维度相同，所以 Attention projection 按设计保证：
+
+```text
+d_q = d_k = d_head
+```
+
+因此教材通常直接把 Query 和 Key 的末维都记为 `d_k`。它表达的是匹配空间的维度，不表示 Query 变成了 Key。Value 的维度 `d_v` 理论上可以不同，实际模型中通常也取 `d_head`。
+
+## 为什么 scores 保留二维 shape
+
+一般情况：
+
+```text
+Q    [L_q, d_k]
+Kᵀ   [d_k, L_k]
+----------------
+QKᵀ  [L_q, L_k]
+```
+
+每一行代表一个 Query，每一列代表一个可被查询的 Key。Decode 时只有一个新 Query，所以：
+
+```text
+L_q = 1
+L_k = sequence_length
+
+scores  [1, sequence_length]
+weights [1, sequence_length]
+```
+
+从数据数量看，可以把第一维 squeeze 掉并写成 `[sequence_length]`；但实现通常保留这一维，以便同一个矩阵公式同时支持 Prefill。Prefill 有多个 Query，shape 会是 `[prompt_length, prompt_length]`。加入 batch 和 head 后，常见逻辑 shape 为：
+
+```text
+[batch, heads, query_length, key_length]
+```
+
+Softmax 只改变数值，不改变 shape，并沿最后的 `key_length` 维执行。
