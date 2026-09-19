@@ -81,3 +81,111 @@ KV Cache 并没有让新 token 不看历史，而是让它直接读取历史计�
 1. 为什么保存 K、V 而不是保存 Q。
 2. Prefill、Decode、finish、abort、retract 中 KV 的完整生命周期。
 3. 使用模型配置手算每个 token 和每个请求的 KV Cache bytes。
+
+## 检查题答案
+
+1. Prefill `[A,B,C]` 并采样 D 后，Cache 已保存 A、B、C 在每一层的 K/V。
+2. 下一次以 D 为输入并采样 E 时，新追加的是 D 在每一层的 K/V。
+3. 历史 K/V 会作为未来 Query 的被检索对象；历史 Q 所对应的 Attention 输出已经计算并消费，未来 token 会产生自己的新 Query，因此通常不保存历史 Q。
+
+这里是 `causal mask`，不是 `casual mask`。它保证旧位置不能看到未来位置，所以旧 token 的逐层表示及 K/V 不会因追加新 token 而变化。
+
+## 单个 Decode step 的 Attention 计算
+
+以“输入 D、采样 E”这一轮为例。下面只看一个 layer、一个 attention head；完整模型还会执行多个 head、output projection、residual、normalization、MLP 和后续 layer。
+
+### 1. 生成 D 的 Q、K、V
+
+```text
+q_D = h_D W_Q
+k_D = h_D W_K
+v_D = h_D W_V
+```
+
+历史 `K(A,B,C)` 和 `V(A,B,C)` 已在 Cache 中。把 D 的 K/V 临时加入本轮可见范围：
+
+```text
+K = [k_A, k_B, k_C, k_D]   shape = [4, d_k]
+V = [v_A, v_B, v_C, v_D]   shape = [4, d_v]
+q_D                         shape = [1, d_k]
+```
+
+### 2. Query 和所有 Key 做点积
+
+```text
+scores = q_D Kᵀ
+       = [q_D·k_A, q_D·k_B, q_D·k_C, q_D·k_D]
+```
+
+点积越大，表示 D 当前寻找的信息与那个位置的 Key 越匹配。
+
+### 3. Scale、Mask 和 Softmax
+
+```text
+scaled_scores = scores / sqrt(d_k)
+weights = softmax(mask(scaled_scores))
+```
+
+- 除以 `sqrt(d_k)`：防止维度较大时点积过大，使 softmax 过度饱和。
+- causal mask：把未来位置设为不可见；D 可以看 A、B、C、D，但不能看尚不存在的 E。
+- softmax：把分数变成和为 1 的权重。
+
+### 4. 对 Value 加权求和
+
+```text
+o_D = weights × V
+```
+
+Attention 权重决定“从每个历史位置取多少内容”，Value 才是被取出的内容。
+
+### 5. 一个二维玩具例子
+
+假设：
+
+```text
+q_D = [1, 1]               d_k = 2
+k_A = [ 1, 0]
+k_B = [ 0, 1]
+k_C = [ 1, 1]
+k_D = [-1, 0]
+```
+
+那么：
+
+```text
+raw scores    = [1, 1, 2, -1]
+scaled scores = [0.707, 0.707, 1.414, -0.707]
+softmax       ≈ [0.234, 0.234, 0.475, 0.057]
+```
+
+这个 Query 最关注 C，其次是 A、B，对 D 自身关注较少。若：
+
+```text
+v_A=[10,0], v_B=[0,10], v_C=[6,6], v_D=[2,0]
+```
+
+则：
+
+```text
+o_D ≈ 0.234v_A + 0.234v_B + 0.475v_C + 0.057v_D
+    ≈ [5.30, 5.19]
+```
+
+这些数字只是帮助理解形状和运算，不代表真实 token 语义。
+
+### 6. Attention 并不直接采样 E
+
+`o_D` 还会经过当前 layer 的其余计算和后续所有 Transformer layers。最后的 hidden state 经过 LM head 得到整个 vocabulary 的 logits，再由 greedy、temperature、top-k 或 top-p 等 sampling 策略选出 E。
+
+Week 1 到这里需要掌握的是：
+
+```text
+q_D [1,d_k]
+  × K_cacheᵀ [d_k,4]
+  → scores [1,4]
+  → softmax weights [1,4]
+  × V_cache [4,d_v]
+  → attention output [1,d_v]
+```
+
+MHA、MQA、GQA、RoPE 和完整 batch/head tensor shape 留在 Week 2 系统学习。

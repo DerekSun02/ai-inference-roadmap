@@ -11,6 +11,7 @@
 7. 完成 finished、retract、Prefill merge 的状态推演练习。
 8. 理解普通 retract 需要重建 KV，以及 Decode disaggregation 可通过 host backup 恢复 KV 的例外。
 9. 理解没有 KV Cache 时为何每个 Decode step 会重新计算历史 token 的逐层 K、V。
+10. 掌握单个 Decode step 的 scaled dot-product Attention：`QKᵀ → scale/mask/softmax → weights·V`。
 
 ## 当前掌握程度
 
@@ -21,11 +22,11 @@
 - 能推演请求完成、KV 压力 retract 和新 Prefill 请求 merge 后的 `running_batch` 与 `waiting_queue`。
 - 能解释 causal mask 为什么保证旧 token 的 K、V 在追加未来 token 后保持不变。
 - 能区分“保留 token 历史”和“保留历史中间 KV 结果”。
+- 能解释历史 K/V 会被未来 Query 读取，而历史 Q 在自己的 Attention 行计算完成后不再使用。
 
 ## 下一步
 
-1. 理解为什么保存 K、V 而不是保存 Q。
-2. 追踪 KV cache 从 Prefill 分配、Decode 追加到完成释放的生命周期。
-3. 手算一次 KV cache bytes，并与实际 GPU memory 观察做数量级验证。
-4. 把当前源码链路补进 `01-request-lifecycle.md`。
-5. 固定实验环境，为 Week 1 baseline 做准备。
+1. 追踪 KV cache 从 Prefill 分配、Decode 追加到完成释放的生命周期。
+2. 手算一次 KV cache bytes，并与实际 GPU memory 观察做数量级验证。
+3. 把当前源码链路补进 `01-request-lifecycle.md`。
+4. 固定实验环境，为 Week 1 baseline 做准备。
