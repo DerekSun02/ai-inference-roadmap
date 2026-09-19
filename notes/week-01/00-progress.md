@@ -15,6 +15,9 @@
 11. 理解 `sqrt(d_k)` 来自 dot-product 标准差，并能解释 Query/Key 的匹配维度必须相同。
 12. 理解 scores/weights 的通用 shape 是 `[query_length, key_length]`，Decode 只是 `query_length=1` 的特例。
 13. 建立 KV Cache 从 Prefill 分配、Decode 追加到 finish/abort/retract 处理的生命周期。
+14. 理解 SGLang 的 `batch row → req_pool_indices → req_to_token → flat KV slot → per-layer K/V` 地址映射。
+15. 区分 token slot 与 page：一个 slot 对应一个 token position，一个 page 包含 `page_size` 个 slots。
+16. 理解 GPU result row 的安全消费边界，以及 overlap overshoot row 为什么必须用旧 batch snapshot 处理。
 
 ## 当前掌握程度
 
@@ -27,10 +30,11 @@
 - 能区分“保留 token 历史”和“保留历史中间 KV 结果”。
 - 能解释历史 K/V 会被未来 Query 读取，而历史 Q 在自己的 Attention 行计算完成后不再使用。
 - 能解释 batch row compaction 与物理 KV slot 不需要同步搬迁。
+- 能从 request slot 和 logical token position 推导 flat KV slot，并计算 page ID 与 page offset。
 
 ## 下一步
 
-1. 完成 KV Cache 生命周期检查题。
-2. 手算一次 KV cache bytes，并与实际 GPU memory 观察做数量级验证。
+1. 用一个小型具体配置手算 per-token、per-request 和 batch KV Cache bytes。
+2. 与实际 GPU memory 观察做数量级验证。
 3. 把当前源码链路补进 `01-request-lifecycle.md`。
 4. 固定实验环境，为 Week 1 baseline 做准备。
