@@ -18,6 +18,10 @@
 14. 理解 SGLang 的 `batch row → req_pool_indices → req_to_token → flat KV slot → per-layer K/V` 地址映射。
 15. 区分 token slot 与 page：一个 slot 对应一个 token position，一个 page 包含 `page_size` 个 slots。
 16. 理解 GPU result row 的安全消费边界，以及 overlap overshoot row 为什么必须用旧 batch snapshot 处理。
+17. 区分 TP、DP、PP，并理解 `num_layers_local` 与 `num_kv_heads_local` 的来源。
+18. 理解 SGLang-Omni `enable_async_decode` 的 launch-current / resolve-previous 一步前瞻，以及 overrun row 的处理。
+19. 掌握 request slot 从 `free_slots` 分配、绑定到 `req.kv.req_pool_idx`、复用和释放的生命周期。
+20. 理解 Radix Cache 以 token prefix 为 key、以离散 KV slot IDs 为 value，不依赖 NHD slots 连续。
 
 ## 当前掌握程度
 
@@ -31,6 +35,9 @@
 - 能解释历史 K/V 会被未来 Query 读取，而历史 Q 在自己的 Attention 行计算完成后不再使用。
 - 能解释 batch row compaction 与物理 KV slot 不需要同步搬迁。
 - 能从 request slot 和 logical token position 推导 flat KV slot，并计算 page ID 与 page offset。
+- 能说明 TP 拆同一层、PP 拆连续层、DP 分不同请求，以及三者可以组合。
+- 能说明 async decode 为什么可能多算一个 finished row，以及 batch snapshot 如何保证结果不串行。
+- 能说明 Radix Tree 如何把相同 token prefix 映射为可共享的离散 physical KV slots。
 
 ## 下一步
 
