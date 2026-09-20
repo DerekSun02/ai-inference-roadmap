@@ -22,6 +22,8 @@
 18. 理解 SGLang-Omni `enable_async_decode` 的 launch-current / resolve-previous 一步前瞻，以及 overrun row 的处理。
 19. 掌握 request slot 从 `free_slots` 分配、绑定到 `req.kv.req_pool_idx`、复用和释放的生命周期。
 20. 理解 Radix Cache 以 token prefix 为 key、以离散 KV slot IDs 为 value，不依赖 NHD slots 连续。
+21. 理解 KV head、MHA/GQA/MQA 的区别，以及 KV Cache 的 head 维由 `num_key_value_heads` 决定。
+22. 能用具体数字推导组合并行下的 `num_layers_local`、`num_kv_heads_local` 和 per-rank KV shape。
 
 ## 当前掌握程度
 
@@ -38,6 +40,7 @@
 - 能说明 TP 拆同一层、PP 拆连续层、DP 分不同请求，以及三者可以组合。
 - 能说明 async decode 为什么可能多算一个 finished row，以及 batch snapshot 如何保证结果不串行。
 - 能说明 Radix Tree 如何把相同 token prefix 映射为可共享的离散 physical KV slots。
+- 能画出 `DP=2, PP=2, TP=2` 的 8-GPU rank 布局，并解释 DP replica group 与单 GPU 完整副本的区别。
 
 ## 下一步
 
