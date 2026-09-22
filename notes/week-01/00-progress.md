@@ -25,6 +25,7 @@
 21. 理解 KV head、MHA/GQA/MQA 的区别，以及 KV Cache 的 head 维由 `num_key_value_heads` 决定。
 22. 能用具体数字推导组合并行下的 `num_layers_local`、`num_kv_heads_local` 和 per-rank KV shape。
 23. 完成 DP/PP/TP 布局检查：掌握除法公式，并订正 GPU 2 应负责 `layers 16–31, KV heads 0–3`。
+24. 选定 Week 1 主实验模型 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`，明确 Base 和低资源模型为后续/回退路径。
 
 ## 当前掌握程度
 
@@ -45,8 +46,9 @@
 
 ## 下一步
 
-1. 选定实际模型，手算模型权重、per-token、per-request 和 batch KV Cache bytes。
-2. 固定 commit、模型、启动命令和软硬件环境，并与实际 GPU memory 做数量级验证。
-3. 运行单请求、固定 concurrency、固定 request rate 三组 baseline，保存原始结果。
-4. 完成两个既有 PR 复盘。
-5. 更新 Week 1 周报和记分卡，通过后进入 Week 2。
+1. 获取实验 GPU 型号、数量和 VRAM，确认 1.7B serving profile 与安全并发上限。
+2. 从模型 config 手算权重、per-token、per-request 和 batch KV Cache bytes。
+3. 固定 container、CUDA、driver、resolved model revision 和启动参数，并与实际 GPU memory 做数量级验证。
+4. 运行单请求、固定 concurrency、固定 request rate 三组 baseline，保存原始结果。
+5. 完成两个既有 PR 复盘。
+6. 更新 Week 1 周报和记分卡，通过后进入 Week 2。
