@@ -24,6 +24,7 @@
 20. 理解 Radix Cache 以 token prefix 为 key、以离散 KV slot IDs 为 value，不依赖 NHD slots 连续。
 21. 理解 KV head、MHA/GQA/MQA 的区别，以及 KV Cache 的 head 维由 `num_key_value_heads` 决定。
 22. 能用具体数字推导组合并行下的 `num_layers_local`、`num_kv_heads_local` 和 per-rank KV shape。
+23. 完成 DP/PP/TP 布局检查：掌握除法公式，并订正 GPU 2 应负责 `layers 16–31, KV heads 0–3`。
 
 ## 当前掌握程度
 
@@ -44,7 +45,8 @@
 
 ## 下一步
 
-1. 用一个小型具体配置手算 per-token、per-request 和 batch KV Cache bytes。
-2. 与实际 GPU memory 观察做数量级验证。
-3. 把当前源码链路补进 `01-request-lifecycle.md`。
-4. 固定实验环境，为 Week 1 baseline 做准备。
+1. 选定实际模型，手算模型权重、per-token、per-request 和 batch KV Cache bytes。
+2. 固定 commit、模型、启动命令和软硬件环境，并与实际 GPU memory 做数量级验证。
+3. 运行单请求、固定 concurrency、固定 request rate 三组 baseline，保存原始结果。
+4. 完成两个既有 PR 复盘。
+5. 更新 Week 1 周报和记分卡，通过后进入 Week 2。

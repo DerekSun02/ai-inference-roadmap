@@ -2,18 +2,23 @@
 
 ## 本周一句话结论
 
-已建立 Qwen3 TTS 请求从预处理、Scheduler、Prefill/Decode 到 Vocoder 的初步心智模型，并能解释 Prefill coalescing 与 continuous batching 的核心状态变化；实验基线尚待完成。
+已建立 Qwen3 TTS 请求从预处理、Scheduler、Prefill/Decode 到 Vocoder 的心智模型，能解释 continuous batching、KV Cache 地址映射、Radix prefix 复用和基础并行分片；实验基线与实际显存验证尚待完成。
 
 ## 已有交付物
 
 - `notes/week-01/01-request-lifecycle.md`
 - `notes/week-01/02-prefill-coalescing.md`
 - `notes/week-01/03-continuous-batching.md`
+- `notes/week-01/04-kv-cache.md`
+- `notes/week-01/05-kv-cache-lifecycle.md`
+- `notes/week-01/06-sglang-kv-addressing.md`
+- `notes/week-01/07-parallel-overlap-request-slots-radix.md`
+- `notes/week-01/08-kv-head-and-parallelism-numeric-example.md`
 
 ## 待完成交付物
 
 - 完整源码调用链
-- KV cache 计算题
+- 实际模型权重与 KV cache 显存计算及 GPU 数量级验证
 - Baseline 实验与原始数据
 - 两个既有 PR 复盘
 

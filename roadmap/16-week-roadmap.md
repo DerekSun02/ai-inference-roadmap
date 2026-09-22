@@ -29,7 +29,7 @@
 - [x] 区分 Pipeline 与 Scheduler 的职责
 - [x] 理解 Prefill 与 Decode 的基本边界
 - [x] 理解 continuous batching 中请求如何进入和离开 `running_batch`
-- [ ] 理解 KV cache 为什么节省重复计算
+- [x] 理解 KV cache 为什么节省重复计算
 - [ ] 手算一次模型权重和 KV cache 显存量级
 - [ ] 固定服务、模型、commit 和运行环境
 - [ ] 单请求、固定并发、固定 request rate 三组 baseline

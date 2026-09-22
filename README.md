@@ -8,9 +8,9 @@
 
 - 阶段：第一阶段——建立共同语言
 - 当前周：Week 1——请求到输出的完整链路
-- 当前主题：Pipeline、Scheduler、Prefill/Decode、continuous batching
-- 下一项理论：KV cache 的作用、生命周期与显存量级
-- 尚未完成：可复现 baseline、环境记录、两个既有 PR 复盘
+- 当前主题：收口 Week 1 的环境、显存计算、baseline 和 PR 复盘
+- 理论进度：Week 1 最低要求已覆盖，并提前涉及 Week 2 的 GQA/KV 与 Week 9 的 TP/PP/DP
+- 尚未完成：实际模型权重与 KV 显存验证、可复现 baseline、环境记录、两个既有 PR 复盘、周报记分卡
 
 ## 每周闭环
 
