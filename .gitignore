@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-modal/
 venv/
 
 # 原始实验文件默认保留目录，但大型临时产物应按实验选择性加入 Git

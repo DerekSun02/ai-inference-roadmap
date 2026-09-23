@@ -28,7 +28,6 @@ SOURCE_DIR = f"/opt/sglang-omni-{SGLANG_OMNI_COMMIT[:12]}"
 
 MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 MODEL_REVISION = "0c0e3051f131929182e2c023b9537f8b1c68adfe"
-MODEL_SPEC = f"{MODEL_ID}@{MODEL_REVISION}"
 DATASET_ID = "zhaochenyang20/seed-tts-eval-arrow"
 CONFIG_PATH = f"{SOURCE_DIR}/examples/configs/qwen3_tts_1_7b_customvoice.yaml"
 
@@ -282,7 +281,7 @@ def run_cell(cell: str, repeat: int = 1) -> dict[str, Any]:
         "sgl-omni",
         "serve",
         "--model-path",
-        MODEL_SPEC,
+        snapshot,
         "--config",
         CONFIG_PATH,
         "--port",
