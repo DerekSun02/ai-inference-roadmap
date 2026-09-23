@@ -93,4 +93,15 @@ First playable payload is not automatically audible speech; report the two separ
 
 ## 6. Blocking input before launch
 
-Record the actual experiment GPU model, count and VRAM. The model decision is final for a datacenter GPU with adequate headroom; the serving profile and concurrency ceiling cannot be selected safely without this information.
+Modal setup is defined in `modal/week1_qwen3_tts.py` and defaults to `H100!`,
+which requests an actual H100 so the matrix does not silently mix H100 and
+H200 runs. Every run records the resolved GPU name, UUID, VRAM, driver and a
+500 ms utilization/memory trace. If another GPU is selected, rerun the entire
+matrix on that GPU rather than mixing rows.
+
+The pinned benchmark does not expose a request `language` CLI flag. For this
+Week 1 matrix the request field therefore remains `auto`, while the entire
+corpus is fixed to SeedTTS English and the built-in voice is fixed to Ryan.
+This limitation must remain visible in the report.
+
+Runbook: `modal/README.md`.

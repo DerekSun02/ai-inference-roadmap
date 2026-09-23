@@ -26,6 +26,7 @@
 22. 能用具体数字推导组合并行下的 `num_layers_local`、`num_kv_heads_local` 和 per-rank KV shape。
 23. 完成 DP/PP/TP 布局检查：掌握除法公式，并订正 GPU 2 应负责 `layers 16–31, KV heads 0–3`。
 24. 选定 Week 1 主实验模型 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`，明确 Base 和低资源模型为后续/回退路径。
+25. 完成 Modal Week 1 baseline 基础设施：固定源码和模型 revision、H100 默认资源、模型缓存、服务生命周期、GPU 采样、原始产物与三 cell 运行入口。
 
 ## 当前掌握程度
 
@@ -46,9 +47,9 @@
 
 ## 下一步
 
-1. 获取实验 GPU 型号、数量和 VRAM，确认 1.7B serving profile 与安全并发上限。
+1. 在 Modal 执行 prepare 和 smoke，确认实际 GPU、VRAM、driver、服务健康和单请求成功。
 2. 从模型 config 手算权重、per-token、per-request 和 batch KV Cache bytes。
-3. 固定 container、CUDA、driver、resolved model revision 和启动参数，并与实际 GPU memory 做数量级验证。
-4. 运行单请求、固定 concurrency、固定 request rate 三组 baseline，保存原始结果。
+3. 亲自运行 C1、C8、1 RPS 三组 baseline，各三次，并保存/取回原始结果。
+4. 对比手算显存与 `gpu-samples.csv`，解释差额中权重、CUDA Graph、activation、allocator 和 KV Cache 的来源。
 5. 完成两个既有 PR 复盘。
 6. 更新 Week 1 周报和记分卡，通过后进入 Week 2。

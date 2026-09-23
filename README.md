@@ -26,6 +26,7 @@
 - `notes/`：概念、源码调用链、计算题和课堂复盘
 - `benchmarks/raw/`：原始实验输出，不手工修改
 - `benchmarks/processed/`：清洗数据、汇总表和图表
+- `modal/`：云端 GPU 实验的可复现环境与运行手册
 - `deploy/`：容器、Kubernetes 与服务配置
 - `dashboards/`：Prometheus 和 Grafana 资产
 - `reports/`：周报、阶段报告和作品集材料
