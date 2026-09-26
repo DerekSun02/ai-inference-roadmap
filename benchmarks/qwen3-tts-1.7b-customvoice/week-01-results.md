@@ -5,7 +5,11 @@
 - C1：`concurrency=1` 的 closed-loop 不形成跨请求 batching；QPS 应近似为
   `1 / mean latency`。TTFC 应主要反映无排队时的请求进入、Preprocessing、
   Prefill/首批 Decode、Vocoder 和首个 PCM chunk 传输。
-- C8：
+- C8：closed-loop 稳定阶段尽量保持 8 个 client outstanding requests。预计 QPS 高于 C1
+  但达不到理想 8 倍；TTFC 尤其 p95 可能因 batching、排队和阶段竞争升高。RTF 可能因
+  per-request 等待增加而上升，但 batching efficiency 能否抵消一部分增长必须由实验判断。
+  KV pool 已物理预分配，峰值显存应接近 C1；可能因 activation、较大 batch graph 和并发
+  Vocoder/辅助状态小幅增加，而不会增加 `7 × 59.47 GiB`。
 - 1 RPS：
 
 ## 固定环境

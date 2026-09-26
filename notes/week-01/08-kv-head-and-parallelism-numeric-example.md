@@ -328,6 +328,49 @@ BF16 下固定 Predictor K+V buffer 约为：
 - Predictor CUDA Graph、Vocoder state 等也分别记入其他显存构成；
 - 不能把 Predictor 的 5 层再加进 `112 KiB × Talker token slots`。
 
+### Predictor cache 的 16 batch slots
+
+`16` 来自：
+
+```python
+max_batch_size = server_args.max_running_requests
+```
+
+本实验 `max_running_requests=16`，所以 Predictor 预留 16 个 batch rows。某次实际 Talker
+decode batch 若只有 `B=6` 个请求，只使用 cache 的 `:6`；其余 10 行闲置。下一步 batch
+完成 compact/merge 后，这些物理行会被新 batch 重用。
+
+因此这里的 batch slot 是“本次 Predictor forward 的固定 batch-row workspace”，不是：
+
+- 主 Talker 的 `req_pool_idx`；
+- paged KV pool 的 token slot；
+- 16 个 code groups。
+
+### Predictor cache 的 17 predictor positions
+
+Qwen3-TTS 每个音频 timestep 输出 `num_code_groups=16` 个 codec codes。主 Talker 先给出
+第 0 组 code 和当前 Talker hidden；Code Predictor 再按顺序生成剩余 15 组 code。
+
+单个 timestep 内可概念化为：
+
+```text
+predictor position 0: 当前 Talker hidden
+predictor position 1: 第 0 组 codec code embedding
+predictor position 2: 已生成的第 1 组 code embedding
+predictor position 3: 已生成的第 2 组 code embedding
+...
+后续位置: 为预测下一 code group 提供前缀 K/V
+```
+
+实现按 `num_code_groups + 1 = 17` 预留 position capacity。当前增量路径在最后一组 code
+采样完成后不需要再把它 forward 给 Predictor，因此不保证 17 个位置每次全部写满；`17`
+是静态 buffer 上限。
+
+最重要的区别：这些是“同一个音频 timestep 内部的 code-group AR positions”，不是整段
+语音沿时间增长的 Talker token positions。处理下一 Talker timestep 时，`cache_len` 又从
+0 开始，覆盖并复用同一组 Predictor buffer。这就是它固定为约 5.31 MiB、不会随音频
+长度线性增长的原因。
+
 ## 9. TP 下不要混淆 per-rank 与 group total
 
 若改成 `TP=2, PP=1` 且 8 个 KV heads 均匀切分：
