@@ -209,3 +209,31 @@ Events；不能直接在异步 CUDA launch 前后用 Python `perf_counter()` 相
 
 低开销 request profiler 通过 `/start_request_profile` 和 `/stop_request_profile` 控制。
 重型 Torch Profiler 应单独运行，避免污染正式 C1/C8 baseline。
+
+## `nvidia-smi` 在本实验中测量什么
+
+`nvidia-smi` 是 NVIDIA System Management Interface 的命令行工具。它通过 NVIDIA
+driver 查询或管理 GPU 状态，常见字段包括：
+
+- GPU 型号、UUID 和 driver version；
+- device-wide memory used / total；
+- GPU utilization；
+- 温度、功耗；
+- 占用 GPU 的进程。
+
+本实验每 500 ms 执行连续采样，记录：
+
+```text
+timestamp,index,name,uuid,
+memory.used,memory.total,utilization.gpu,power.draw
+```
+
+正确解释边界：
+
+- `memory.used` 是整张设备已占显存，包括权重、预分配 KV pool、CUDA Graph、allocator
+  reserve、context 和其他 buffer，不是某一个请求的显存；
+- `utilization.gpu` 表示采样窗口内 GPU 有 kernel 执行的时间比例，不等于 tensor core
+  达到了多少理论 FLOPS，也不能直接推出还剩多少吞吐空间；
+- 500 ms polling 会漏掉更短的瞬时峰值，因此采样 peak 不是 CUDA allocator 的精确峰值；
+- `nvidia-smi` 适合做硬件身份、device-wide 显存和粗粒度利用率证据；kernel 级归因应使用
+  Torch Profiler、Nsight Systems/Compute 或 CUDA Events。

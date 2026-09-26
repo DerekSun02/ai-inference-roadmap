@@ -296,7 +296,54 @@ context 上限和 Scheduler admission 约束，不能因为 pool 有 556787 slot
 
 ### Code Predictor 为什么没有加进这条公式
 
-同一个 config 里还有 5 层的 `code_predictor_config`，但日志中的主 SGLang KV pool 用
-`28 × 8 × 128 × BF16 × K/V` 已经精确解释。说明日志里的 `556787-token KV pool` 对应
-主 Talker 的 token KV；Code Predictor 的执行状态、Vocoder incremental state 和 CUDA
-Graph 内存属于其他常驻/临时结构，不能重复算进这条 Talker KV 公式。
+同一个 config 里还有 5 层的 `code_predictor_config`。Code Predictor 确实也计算并缓存
+K/V，但它不是主 Talker 那种随整段序列 token 数增长的 paged KV pool。
+
+源码预分配固定 tensor：
+
+```text
+K predictor cache shape =
+[5 layers, 16 max batch slots, 17 predictor positions, 8 KV heads, 128]
+
+V predictor cache shape = same
+```
+
+其中 `17 = num_code_groups + 1`。Predictor 为当前 Talker timestep 逐组预测 codec codes，
+完成后这些 batch-slot buffers 会在后续 timestep 复用，而不是为整段 Talker token 历史
+持续追加 physical slots。
+
+BF16 下固定 Predictor K+V buffer 约为：
+
+```text
+2(K+V) × 5 × 16 × 17 × 8 × 128 × 2 bytes
+= 5570560 bytes
+= 5.3125 MiB
+```
+
+相比之下，主 Talker pool 是 `59.47 GiB`，并且公式
+`28 × 8 × 128 × BF16 × K/V` 已精确解释日志。因此：
+
+- `112 KiB/token` 只描述主 Talker 的序列 KV；
+- Predictor 固定 cache 属于独立的常驻辅助 buffer；
+- Predictor CUDA Graph、Vocoder state 等也分别记入其他显存构成；
+- 不能把 Predictor 的 5 层再加进 `112 KiB × Talker token slots`。
+
+## 9. TP 下不要混淆 per-rank 与 group total
+
+若改成 `TP=2, PP=1` 且 8 个 KV heads 均匀切分：
+
+```text
+num_kv_heads_local = 8 / 2 = 4
+per-rank KV        = 112 KiB / 2 = 56 KiB/token
+whole TP group     = 56 × 2 = 112 KiB/token
+```
+
+若保持同样 `556787 slots` 的全局 pool capacity：
+
+```text
+每张 GPU 的 pool shard ≈ 59.47 / 2 = 29.735 GiB
+整个 TP group pool      ≈ 29.735 × 2 = 59.47 GiB
+```
+
+所以 `29.735 GiB` 是每张 TP GPU 的 pool shard，不是整个 TP group 的总量。TP 把数据
+分散到多卡，通常不会让同一个 replica 的全局 KV 数据凭空减半。

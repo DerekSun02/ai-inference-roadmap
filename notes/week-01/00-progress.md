@@ -30,6 +30,7 @@
 26. 完成 C1 repeat 1：掌握 closed-loop `QPS ≈ 1 / mean latency`、TTFC 的端到端边界、RTF 的归一化意义、ITL 与 playback continuity 的联合解释，以及显存预分配与活跃请求用量的区别。
 27. 完成 C1 自测订正：理解 C8 的 `QPS ≈ 8 / mean latency` 来自 closed-loop Little's Law 而非固定 batch size，并区分 queue wait、host-observed Prefill forward 与纯 GPU Prefill kernel time。
 28. 完成 C1 三次重复：共 `96/96` 成功，QPS/mean E2E/mean RTF 跨 run 极差分别约 `0.94%/0.81%/1.13%`，确认 C1 可作为 C8 与 1-RPS 的稳定对照。
+29. 完成实际 Qwen3-TTS KV 手算：推导主 Talker `112 KiB/token` 并复现日志 `59.47 GiB`，区分 TP per-rank/group total、KV pool capacity/active usage，以及固定 Code Predictor KV buffer；理解 `nvidia-smi` 的观测边界。
 
 ## 当前掌握程度
 
