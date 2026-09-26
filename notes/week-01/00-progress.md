@@ -31,6 +31,7 @@
 27. 完成 C1 自测订正：理解 C8 的 `QPS ≈ 8 / mean latency` 来自 closed-loop Little's Law 而非固定 batch size，并区分 queue wait、host-observed Prefill forward 与纯 GPU Prefill kernel time。
 28. 完成 C1 三次重复：共 `96/96` 成功，QPS/mean E2E/mean RTF 跨 run 极差分别约 `0.94%/0.81%/1.13%`，确认 C1 可作为 C8 与 1-RPS 的稳定对照。
 29. 完成实际 Qwen3-TTS KV 手算：推导主 Talker `112 KiB/token` 并复现日志 `59.47 GiB`，区分 TP per-rank/group total、KV pool capacity/active usage，以及固定 Code Predictor KV buffer；理解 `nvidia-smi` 的观测边界。
+30. 完成 C8 repeat 1：观察 QPS 提升 `2.35×`、峰值显存仅增加 `726 MiB`，同时识别首 measured cohort 的约 2 秒 TTFC 长尾、ITL/continuity 退化和 batch-dependent output length 限制。
 
 ## 当前掌握程度
 
@@ -52,7 +53,7 @@
 ## 下一步
 
 1. 从模型 config 手算权重、per-token、per-request 和 batch KV Cache bytes。
-2. 运行 C8 三次，比较 batching 对 QPS、TTFC、ITL、RTF 和 GPU utilization 的影响。
+2. 运行 C8 repeat 2/3，确认 repeat 1 的首 cohort TTFC 长尾是否可重复，再完成三次汇总。
 3. 运行 1 RPS 三次，判断低负载下是否存在可观测 queueing。
 4. 单独做一次 request-level profiling pass，拆分 queue wait 与 Prefill forward；仅在需要时再开 Torch Profiler。
 5. 对比手算显存与 `gpu-samples.csv`，解释权重、CUDA Graph、activation、allocator 和 KV pool。

@@ -237,3 +237,56 @@ memory.used,memory.total,utilization.gpu,power.draw
 - 500 ms polling 会漏掉更短的瞬时峰值，因此采样 peak 不是 CUDA allocator 的精确峰值；
 - `nvidia-smi` 适合做硬件身份、device-wide 显存和粗粒度利用率证据；kernel 级归因应使用
   Torch Profiler、Nsight Systems/Compute 或 CUDA Events。
+
+## C8 repeat 1：吞吐收益与长尾代价
+
+C1 使用三次均值作为 baseline，C8 repeat 1 的对比为：
+
+| Metric | C1 baseline | C8 repeat 1 | 变化 |
+|---|---:|---:|---:|
+| QPS | 2.031 | 4.772 | 2.35× |
+| Audio throughput | 8.779 | 20.207 | 2.30× |
+| E2E p50 | 481.3 ms | 880 ms | 1.83× |
+| E2E p95 | 801.3 ms | 3826 ms | 4.78× |
+| TTFC p50 | 33.0 ms | 64.7 ms | 1.96× |
+| TTFC p95 | 37.1 ms | 2080.7 ms | 约 56× |
+| RTF p50 | 0.1140 | 0.1949 | 1.71× |
+| ITL p95 | 70.5 ms | 146.7 ms | 2.08× |
+| Peak memory | 70077 MiB | 70803 MiB | +726 MiB |
+
+结果验证了总体预测：continuous batching 提高了 throughput，但没有获得理想 8 倍，且
+per-request latency 和流式连续性变差。显存只增加约 1%，验证主 KV pool 是预分配共享
+容量。
+
+### TTFC 不是均匀变慢
+
+32 个请求的 TTFC 呈 cohort pattern：
+
+```text
+requests 0..7:  1.9235–2.0812 s
+request 8:      0.8277 s
+requests 9..31: 0.0428–0.0724 s
+```
+
+所以 `TTFC p95=2.0807 s` 不能概括成“每个请求都需要约 2 秒”。它主要描述第一 measured
+cohort。benchmark 从 measured phase 开始到 server log 首次出现该 cohort Prefill 约有
+1.9 秒；现有普通日志不足以区分 Preprocessing、request build、admission 或其他阶段交接。
+下一步应先用 repeat 2/3 验证，再用 request event profiler 定位。
+
+### 流式播放出现一个可感知缺口
+
+一个请求出现 `84.8 ms` 最大 playback underrun，因此：
+
+```text
+C50  = 31/32 = 96.88%
+C100 = 32/32 = 100%
+```
+
+这说明 throughput 提升不仅影响 TTFC，也可能影响已经开始播放后的 chunk continuity。
+
+### 固定 seed 不等于 batch-invariant output
+
+同一 32 个 request IDs 在 C1/C8 中生成时长全部改变，平均绝对差 `0.852 s`。整体平均
+音频时长仍接近（`4.322 s` vs `4.235 s`），因此 aggregate 对比仍有参考价值，但逐请求
+绝对 latency 不再是完全 paired 的 apples-to-apples 比较。RTF 更适合归一化输出长度，
+但仍包含 queue/stage wait。
