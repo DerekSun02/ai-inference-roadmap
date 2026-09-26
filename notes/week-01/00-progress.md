@@ -29,6 +29,7 @@
 25. 完成 Modal Week 1 baseline 基础设施：固定源码和模型 revision、H100 默认资源、模型缓存、服务生命周期、GPU 采样、原始产物与三 cell 运行入口。
 26. 完成 C1 repeat 1：掌握 closed-loop `QPS ≈ 1 / mean latency`、TTFC 的端到端边界、RTF 的归一化意义、ITL 与 playback continuity 的联合解释，以及显存预分配与活跃请求用量的区别。
 27. 完成 C1 自测订正：理解 C8 的 `QPS ≈ 8 / mean latency` 来自 closed-loop Little's Law 而非固定 batch size，并区分 queue wait、host-observed Prefill forward 与纯 GPU Prefill kernel time。
+28. 完成 C1 三次重复：共 `96/96` 成功，QPS/mean E2E/mean RTF 跨 run 极差分别约 `0.94%/0.81%/1.13%`，确认 C1 可作为 C8 与 1-RPS 的稳定对照。
 
 ## 当前掌握程度
 
@@ -49,10 +50,9 @@
 
 ## 下一步
 
-1. 在配置完全不变时运行 C1 repeat 2/3，检查 run-to-run variance。
-2. 从模型 config 手算权重、per-token、per-request 和 batch KV Cache bytes。
-3. 运行 C8 三次，比较 batching 对 QPS、TTFC、ITL、RTF 和 GPU utilization 的影响。
-4. 运行 1 RPS 三次，判断低负载下是否存在可观测 queueing。
-5. 单独做一次 request-level profiling pass，拆分 queue wait 与 Prefill forward；仅在需要时再开 Torch Profiler。
-6. 对比手算显存与 `gpu-samples.csv`，解释权重、CUDA Graph、activation、allocator 和 KV pool。
-7. 完成两个既有 PR 复盘，更新 Week 1 周报和记分卡，通过后进入 Week 2。
+1. 从模型 config 手算权重、per-token、per-request 和 batch KV Cache bytes。
+2. 运行 C8 三次，比较 batching 对 QPS、TTFC、ITL、RTF 和 GPU utilization 的影响。
+3. 运行 1 RPS 三次，判断低负载下是否存在可观测 queueing。
+4. 单独做一次 request-level profiling pass，拆分 queue wait 与 Prefill forward；仅在需要时再开 Torch Profiler。
+5. 对比手算显存与 `gpu-samples.csv`，解释权重、CUDA Graph、activation、allocator 和 KV pool。
+6. 完成两个既有 PR 复盘，更新 Week 1 周报和记分卡，通过后进入 Week 2。

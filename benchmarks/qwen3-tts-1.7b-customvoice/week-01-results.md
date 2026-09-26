@@ -26,8 +26,8 @@
 | Cell | Repeat | GPU | Success/Total | QPS | Audio s/s | TTFC p50/p95 | ITL p95 | E2E p50/p95 | RTF p50 | C50 | Peak MiB |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | c1 | 1 | NVIDIA H100 80GB HBM3 | 32/32 | 2.019 | 8.726 | 0.0336/0.0379 | 0.0714 | 0.484/0.797 | 0.1154 | 100.0 | 70077.0 |
-| c1 | 2 | | | | | | | | | | |
-| c1 | 3 | | | | | | | | | | |
+| c1 | 2 | NVIDIA H100 80GB HBM3 | 32/32 | 2.036 | 8.801 | 0.0332/0.0351 | 0.0695 | 0.480/0.794 | 0.1140 | 100.0 | 70077.0 |
+| c1 | 3 | NVIDIA H100 80GB HBM3 | 32/32 | 2.038 | 8.810 | 0.0322/0.0382 | 0.0706 | 0.480/0.813 | 0.1127 | 100.0 | 70077.0 |
 | c8 | 1 | | | | | | | | | | |
 | c8 | 2 | | | | | | | | | | |
 | c8 | 3 | | | | | | | | | | |
@@ -56,6 +56,16 @@
 - 服务日志显示权重加载占用约 `3.63 GB`；预分配 KV pool 为 `556787 tokens`、
   `59.47 GiB`；Vocoder incremental state 为 `159.3 MiB`，此外还有 CUDA Graph、
   activation、allocator reserve 和其他运行时内存。
+- C1 三次共完成 `96/96` 个 measured requests，0 失败，且分别运行在三张不同 UUID 的
+  H100 上。三次 QPS 为 `2.019/2.036/2.038`，均值 `2.031`，跨 run 极差约为均值的
+  `0.94%`。
+- 三次 mean E2E 为 `495/491/491 ms`，极差约 `0.81%`；mean RTF 为
+  `0.1154/0.1143/0.1141`，极差约 `1.13%`；mean TTFC 为
+  `33.5/33.1/32.6 ms`，绝对极差 `0.9 ms`、相对约 `2.72%`。
+- 三次音频平均时长都为 `4.322 s`，平均 chunk 数都为 `9.34`，峰值显存都为
+  `70077 MiB`，所有请求的 playback underrun 都是 0。
+- 三次首个 warmup request 分别约为 `9.91/9.52/9.39 s`，依然远慢于 warmup 后的
+  steady-state request，因此 cold/first-request 与 steady-state 的边界具有重复性。
 
 ### 当前解释
 
@@ -73,6 +83,9 @@
 - 峰值显存不能全部称为“实际请求使用的 KV”。启动时已经按
   `mem_fraction_static=0.850` 预分配了巨大的 KV pool；C1 运行期间峰值相对 ready 状态
   只增加约 `252 MiB`。
+- 三次核心均值的跨 run 极差约为 `0.8%–2.7%`，且控制变量、输出长度和显存一致，
+  因此 C1 足够稳定，可以作为同一实验设计下 C8 与 1-RPS 的对照。这里比较的是同型号
+  H100 间的 run-to-run repeatability，不代表跨 GPU 型号或跨软件版本可复现。
 
 ### 支持解释的源码、日志或指标
 
@@ -85,7 +98,8 @@
 
 ### 替代解释
 
-- 32 个请求仍是小样本，p95/p99 尾部分位数不稳定，需要 C1 repeat 2/3 验证。
+- 每轮仍只有 32 个请求，p95/p99 由很少的尾部样本决定。三次 E2E p95 为
+  `794–813 ms`，TTFC p95 为 `35.1–38.2 ms`；尾部分位数的小幅波动不能当作回归。
 - 文本长度、生成 codec token 数和音频时长可能共同影响 latency；当前 benchmark 没有
   输出 completion token 数，因此只能确认与最终音频时长高度相关，不能拆出每一项因果。
 - GPU utilization 来自 500 ms 抽样，短 kernel 和瞬时峰值会被平滑，不能据此断言 GPU
@@ -101,8 +115,8 @@
 
 ## 局限与下一步最小验证
 
-- 局限：目前只有 C1 repeat 1，尚不能评价 run-to-run variance，也不能观察 batching。
-- 下一步只改变的一个变量：先保持配置完全不变，运行 C1 repeat 2/3 验证重复性；之后
-  将 client concurrency 从 1 改为 8，进入 C8。
-- 预期结果：C1 repeat 2/3 应接近当前 TTFC/RTF/QPS；C8 可能提高 QPS 和 GPU utilization，
+- 局限：C1 已完成三次，但仍不能观察 batching；每轮 32 请求也不足以精确估计极端尾延迟。
+- 下一步只改变的一个变量：将 client concurrency 从 1 改为 8，进入 C8；模型、数据、
+  seed、GPU 型号和其余 serving 配置不变。
+- 预期结果：C8 可能提高 QPS 和 GPU utilization，
   但单请求 TTFC、ITL 或 E2E tail 可能上升。`concurrency=8` 不保证每次 Prefill batch=8。

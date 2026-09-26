@@ -142,10 +142,33 @@ KV pool 容量，即使 C1 同时只跑一个请求，这块 pool 仍然已被�
 6. H100 大部分显存是启动时预分配的 KV pool 和常驻状态，不能按 C1 活跃 KV 使用量解释。
 7. 当前数值是 warmup 后的 steady-state，不包含 deployment cold start 和首请求 warmup。
 
+## 三次重复后的稳定性结论
+
+| Metric | Repeat 1 | Repeat 2 | Repeat 3 | 三次均值 | 跨 run 极差/均值 |
+|---|---:|---:|---:|---:|---:|
+| QPS | 2.019 | 2.036 | 2.038 | 2.031 | 0.94% |
+| Mean E2E | 495 ms | 491 ms | 491 ms | 492.3 ms | 0.81% |
+| Mean RTF | 0.1154 | 0.1143 | 0.1141 | 0.1146 | 1.13% |
+| Mean TTFC | 33.5 ms | 33.1 ms | 32.6 ms | 33.1 ms | 2.72% |
+| Peak memory | 70077 MiB | 70077 MiB | 70077 MiB | 70077 MiB | 0% |
+
+三次分别使用不同 UUID 的 H100，但每次都是相同 H100 80GB 型号、driver、模型 revision、
+源码 commit、seed 和 32 个数据样本。所有 `96/96` measured requests 成功，平均音频时长
+和 chunk 数也完全一致。
+
+因此 C1 的中心指标具有良好 repeatability，可以作为 C8/1-RPS 对照。TTFC 看起来相对
+波动最大，是因为它本身只有约 33 ms：`0.9 ms` 的绝对变化换算后就是 `2.72%`。判断
+回归时必须同时看 absolute delta 和 relative delta。
+
+尾部分位数仍要谨慎：每轮只有 32 个请求，p95/p99 实际由少数请求决定。三次 E2E p95
+为 `794–813 ms`、TTFC p95 为 `35.1–38.2 ms`，这种量级的差异目前属于重复实验中的
+正常波动，而不是性能回归证据。
+
 ## 还不能下的结论
 
 1. 不能从 C1 说明 continuous batching 提升了多少吞吐。
-2. 不能从一次 repeat 判断结果稳定性。
+2. 三次 repeat 支持当前固定环境下的 C1 稳定性，但不能外推到其他 GPU 型号、软件版本
+   或 workload。
 3. 不能从 500 ms GPU utilization 抽样直接估算仍可获得多少吞吐。
 4. 不能把 TTFC 等同于 Prefill latency，也不能把峰值显存全部等同于 KV Cache。
 5. 不能用这组 steady-state 数字描述 cold start 或首请求延迟。
