@@ -183,3 +183,120 @@ V_layer[token_slot] shape = [4,128]
 - pipeline stage 首尾额外模块。
 
 所以公式适合建立主模型；查看具体模型时再以 runtime config 和每个 rank 的实际 shard 为准。
+
+## 8. 用实际 Qwen3-TTS 1.7B 配置手算
+
+实验固定 revision 的 `config.json` 中，主 Talker 为：
+
+```text
+num_hidden_layers    = 28
+num_attention_heads  = 16
+num_key_value_heads  = 8
+head_dim             = 128
+KV dtype             = BF16 = 2 bytes
+TP = 1, PP = 1
+```
+
+这是 GQA：每 `16 / 8 = 2` 个 Q heads 共用一个 KV head。注意 `hidden_size=2048`，
+这里也满足：
+
+```text
+num_attention_heads × head_dim = 16 × 128 = 2048
+```
+
+### 单层、单 token
+
+```text
+K [8 KV heads, 128] × 2 bytes = 2048 bytes
+V [8 KV heads, 128] × 2 bytes = 2048 bytes
+K + V                         = 4096 bytes = 4 KiB
+```
+
+### 28 层、单 token
+
+```text
+KV bytes/token
+= 2(K+V) × 28 layers × 8 KV heads × 128 head_dim × 2 bytes
+= 114688 bytes
+= 112 KiB/token
+```
+
+这里第一个 `2` 表示 K 和 V 两份，最后一个 `2 bytes` 表示 BF16 每个元素占两字节。
+模型名里的 `1.7B` 不能直接推出 KV Cache 大小；必须使用 layer、KV head、head_dim 和
+dtype。
+
+### 按 token 长度换算请求 KV
+
+忽略 allocator 对齐、page 内部碎片和共享 prefix 时：
+
+| 一个请求当前已缓存 token 数 | Talker KV 大小 |
+|---:|---:|
+| 100 | 10.9375 MiB |
+| 1,000 | 109.375 MiB |
+| 8,192 | 896 MiB = 0.875 GiB |
+
+请求 KV 随“当前缓存 token 数”线性增长，不是请求一进入就一定占满 8192 tokens。
+8192 是该实验配置中的最大上下文需求上界。
+
+### 16 个最大长度 running requests
+
+日志给出的最大配置需求是：
+
+```text
+16 running × 8192 tokens = 131072 tokens
+```
+
+对应：
+
+```text
+131072 × 112 KiB = 14 GiB
+```
+
+这表示 16 个请求都达到 8192 cached tokens 时的主 Talker KV 需求，不表示 C1 实际用了
+14 GiB。
+
+### 反向验证运行日志的 59.47 GiB
+
+运行日志显示：
+
+```text
+KV pool slots = 556787 tokens
+K size        = 29.74 GiB
+V size        = 29.74 GiB
+K + V         = 59.47 GiB
+```
+
+用手算结果反推：
+
+```text
+556787 slots × 112 KiB/slot
+= 59.471268 GiB
+```
+
+与日志的 `59.47 GiB` 精确吻合。拆开后 K 和 V 各占一半，约 `29.74 GiB`。
+
+### Capacity、reserved memory 与 active usage
+
+必须区分：
+
+```text
+pool capacity   = 总共预分配了多少 physical KV slots
+active usage    = 当前请求和 prefix cache 实际占用了多少 slots
+free slots      = capacity - active usage
+```
+
+`59.47 GiB` 是启动时按显存预算预分配的 KV tensor 容量，不是 C1 单请求的活跃 KV。
+这解释了为什么 server ready 已占约 69.8 GiB，而 C1 benchmark 峰值只比 ready 多约
+252 MiB。预分配 tensor 的物理显存已经存在，之后请求主要是在 pool 中领取和归还 slot。
+
+配置的 live-request 最大需求是 14 GiB，但 pool capacity 更大；额外 slots 还可承载保留
+的 prefix/Radix cache，并提供容量余量。是否能接收请求仍同时受 `max_running_requests`、
+context 上限和 Scheduler admission 约束，不能因为 pool 有 556787 slots 就推断可以同时跑
+`556787 / 8192` 个最大长度请求。
+
+### Code Predictor 为什么没有加进这条公式
+
+同一个 config 里还有 5 层的 `code_predictor_config`，但日志中的主 SGLang KV pool 用
+`28 × 8 × 128 × BF16 × K/V` 已经精确解释。说明日志里的 `556787-token KV pool` 对应
+主 Talker 的 token KV；Code Predictor 的执行状态、Vocoder incremental state 和 CUDA
+Graph 内存属于其他常驻/临时结构，不能重复算进这条 Talker KV 公式。

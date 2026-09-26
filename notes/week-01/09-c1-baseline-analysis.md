@@ -180,3 +180,32 @@ KV pool 容量，即使 C1 同时只跑一个请求，这块 pool 仍然已被�
 3. TTFC 的 33.5 ms 在进入客户端前至少跨过了哪些阶段？
 4. 为什么 ITL p95 为 71.4 ms，仍然可以得到 0 playback underrun？
 5. 为什么 `70077 MiB` 不能叫作“一个请求占用的 KV Cache”？
+
+## Prefill latency 的服务端测量边界
+
+客户端 TTFC 不能代替 Prefill latency。SGLang-Omni 的 request profiler 已提供：
+
+```text
+preprocess_start → preprocess_end
+scheduler_request_build_start → scheduler_request_build_end
+scheduler_queue_enter → scheduler_prefill_start
+scheduler_prefill_start → scheduler_prefill_end
+```
+
+其中：
+
+```text
+queue wait
+= scheduler_prefill_start - scheduler_queue_enter
+
+host-observed first Prefill forward
+= scheduler_prefill_end - scheduler_prefill_start
+```
+
+第二个区间在 `OmniScheduler._run_batch()` 中包围第一次 `_model_runner.execute()`，可能
+包含输入整理、CUDA launch、必要同步和框架开销。若要回答纯 GPU Prefill kernels 花了
+多久，需要在独立 profiling pass 中使用 Torch Profiler CUDA trace 或同 stream 的 CUDA
+Events；不能直接在异步 CUDA launch 前后用 Python `perf_counter()` 相减。
+
+低开销 request profiler 通过 `/start_request_profile` 和 `/stop_request_profile` 控制。
+重型 Torch Profiler 应单独运行，避免污染正式 C1/C8 baseline。
