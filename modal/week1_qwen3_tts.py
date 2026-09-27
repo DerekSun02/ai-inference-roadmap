@@ -72,6 +72,19 @@ CELL_CONFIGS: dict[str, dict[str, Any]] = {
         "warmup": 1,
         "purpose": "Open-loop 1 RPS Poisson arrivals; expected horizon about 60 s.",
     },
+    "rps1_warm8": {
+        # Diagnostic control: keep the measured workload identical to rps1 and
+        # change only warmup coverage. With concurrency=0, BenchmarkRunner
+        # launches all eight warmup requests together via asyncio.gather.
+        "concurrency": 0,
+        "request_rate": 1.0,
+        "max_samples": 60,
+        "warmup": 8,
+        "purpose": (
+            "Diagnostic open-loop 1 RPS run with eight concurrent warmup "
+            "requests to test concurrency-shaped cold work."
+        ),
+    },
 }
 
 
@@ -443,11 +456,13 @@ def run_cell(cell: str, repeat: int = 1) -> dict[str, Any]:
 
 @app.local_entrypoint()
 def main(action: str = "prepare", repeat: int = 1) -> None:
-    """CLI: prepare, smoke, c1, c8, or rps1."""
+    """CLI: prepare or one of the cells declared in CELL_CONFIGS."""
 
     if action == "prepare":
         prepare.remote()
         return
     if action not in CELL_CONFIGS:
-        raise ValueError("action must be prepare, smoke, c1, c8, or rps1")
+        raise ValueError(
+            f"action must be prepare or one of {sorted(CELL_CONFIGS)}"
+        )
     run_cell.remote(action, repeat)

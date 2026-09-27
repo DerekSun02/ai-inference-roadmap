@@ -68,6 +68,17 @@ modal run modal/week1_qwen3_tts.py --action rps1 --repeat 1
 
 随后把 `--repeat` 改为 `2` 和 `3`。`rps1` 的到达间隔是指数分布，因此 60 个请求的发送时间期望约为 60 秒，不保证恰好 60.000 秒；实际 wall clock 保存在结果中。
 
+完成正式矩阵后，若 `rps1` 的 measured phase 开头稳定出现暂停，运行单变量诊断 cell：
+
+```bash
+# Measured workload 仍是 open-loop 1 RPS；唯一变化是 1 → 8 个并发 warmup requests
+modal run modal/week1_qwen3_tts.py --action rps1_warm8 --repeat 1
+```
+
+`BenchmarkRunner` 在 `concurrency=0` 时不施加 warmup semaphore，并通过
+`asyncio.gather` 同时发出这 8 个 warmup requests。该 cell 只用于验证
+concurrency-shaped warmup coverage，不与正式 `rps1` 三次 baseline 求平均。
+
 每次运行前先写下预测：
 
 1. 这个 cell 的 client outstanding、`waiting_queue` 和 `running_batch` 大概会是什么关系？

@@ -459,3 +459,47 @@ repeat 1/2 的 p95 仍很低，而 repeat 3 的 p95 突然成为 `1.289 s`：
 最小因果实验不是继续重复同一配置，而是保持 measured `1 RPS` 不变，只把 warmup 改成
 一次并发 warmup。如果异常消失，才有证据支持 warmup coverage；具体代码位置仍需要
 request-level profiling。
+
+## 指标复习卡：RTF p50、playback underrun 与 C200
+
+### RTF p50
+
+单个请求的 Real-Time Factor：
+
+```text
+RTF = 请求 E2E 生成时间 / 最终生成音频时长
+```
+
+例如生成 10 秒音频耗时 1.2 秒，`RTF=0.12`。越低越快；`RTF<1` 表示生成速度快于
+实时播放。`RTF p50` 是所有请求 RTF 排序后的中位数：约一半请求不高于它，另一半不低于
+它。它不是 `median latency / median audio duration`，而是先逐请求计算 RTF，再取 p50。
+
+### Playback underrun
+
+第一段 PCM 到达后，客户端开始消费已缓冲的音频。如果已有音频会在下一 chunk 到达前
+播放完，中间没有数据可播的缺口就是 playback underrun：
+
+```text
+buffer deadline = 已到达音频能够连续播放到的时刻
+underrun         = max(0, next chunk arrival - buffer deadline)
+```
+
+因此 ITL 大不一定 underrun：上一 chunk 若携带足够长的音频，仍能覆盖等待时间。反过来，
+TTFC 很低也不能保证播放连续，因为 TTFC 只描述第一个 chunk。
+
+### C200
+
+对每个多 chunk 请求先求它的 `max_playback_underrun`，再计算：
+
+```text
+C200 = 最大 playback underrun ≤ 200 ms 的请求数 / 可评估请求数 × 100%
+```
+
+例如 60 个请求中 58 个最大断粮不超过 200 ms：
+
+```text
+C200 = 58 / 60 = 96.67%
+```
+
+`C50/C100/C200` 的阈值越宽，比例通常只会不变或升高。若三者完全相同，可能表示失败请求
+的缺口已经远大于 200 ms；本次 1-RPS 正是两个请求出现 1–2 秒级 underrun。
