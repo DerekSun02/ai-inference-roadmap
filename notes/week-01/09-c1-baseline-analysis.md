@@ -351,3 +351,66 @@ Preprocessing、request build 或 scheduler queue 中的哪一项。Prefill 日�
 repeat 2/3 的 playback underrun 全为 0，repeat 1 唯一的 `84.8 ms` underrun 也未复现。
 峰值显存三次为 `70803/70755/70756 MiB`，仍只比 C1 高约 0.7 GiB，支持 KV pool 已预分配
 且共享的解释。
+
+## 1-RPS repeat 1：低 offered load 不等于最大并发 1
+
+实验使用 open-loop Poisson arrivals：客户端按到达计划发送请求，不等前一个请求结束，且
+没有 client-side concurrency cap。60 个请求在约 `52.24 s` 的 measured window 中完成：
+
+```text
+throughput = 60 / 52.24 ≈ 1.149 req/s
+```
+
+这并不违反配置的 `1 RPS`。Poisson 的 1 RPS 是长期平均到达率，有限样本中的实际总间隔
+会随机波动；本轮到达序列恰好比期望的约 60 秒更紧凑。系统处理能力又高于 offered load，
+所以 completion throughput 能跟上 realized arrival throughput。
+
+### 中心指标符合预测
+
+| Metric | C1 三次典型值 | 1-RPS repeat 1 | 解释 |
+|---|---:|---:|---|
+| QPS | 2.031 | 1.149 | C1 是 service-limited；1-RPS 是 arrival-limited |
+| TTFC p50 | 33.0 ms | 33.6 ms | 大多数请求几乎无排队 |
+| TTFC p95 | 37.1 ms | 60.1 ms | 偶发重叠增加尾部 |
+| RTF p50 | 0.1140 | 0.1171 | 典型单请求效率接近 C1 |
+| ITL p95 | 70.5 ms | 83.2 ms | 流式间隔略升 |
+| Peak memory | 70077 MiB | 70127 MiB | 预分配 pool 不变，仅高 50 MiB |
+
+measured 窗口内，500 ms GPU utilization 样本平均为 `28.76%`，明显低于 C1 的约
+`61.9%`；104 个样本中 56 个为 0%。这订正了“open-loop 会比 C1 更忙”的直觉：C1
+完成一个就立即补一个，始终尽量保持一个 active request；1-RPS 则经常没有请求，只在
+Poisson 短间隔时出现重叠。
+
+server 的 Decode 日志快照观察到的最大 `running-req` 是 4。它再次说明：
+
+```text
+arrival rate = 1 request/second
+不等于
+maximum concurrency = 1 request
+```
+
+### 两类尾部异常发生在同一个早期暂停窗口
+
+60 个请求的 TTFC 分布：
+
+```text
+57 requests: < 100 ms
+1 request:      168.3 ms
+2 requests:    1587.6 ms / 1734.0 ms
+```
+
+两个慢 TTFC 请求分别在 `15:58:26.914` 和 `15:58:27.061` 提交给 preprocessing，直到
+`15:58:28.627` 才作为同一个 Prefill batch 出现在 scheduler 日志中。与此同时，前两个
+已经开始生成的请求分别出现 `1.724 s` 和 `1.827 s` 最大 playback underrun。因此这是
+一次影响整条服务进度的约 2 秒暂停，不只是两个新请求在普通 scheduler queue 中排队。
+
+结果为：
+
+```text
+TTFC p50/p95/p99 = 33.6 ms / 60.1 ms / 1647.6 ms
+C50/C100/C200    = 96.67% / 96.67% / 96.67%
+```
+
+p50/p95 描述了绝大多数低负载请求的良好体验；p99 与 continuity 则揭示了少量严重暂停。
+普通日志还不能判断根因是某个 stage 的 lazy initialization、阶段阻塞还是其他运行时事件。
+repeat 2/3 的任务是判断它是否像 C8 repeat 1 一样不再复现。
