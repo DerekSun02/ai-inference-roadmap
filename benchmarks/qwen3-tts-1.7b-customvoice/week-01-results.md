@@ -10,7 +10,13 @@
   per-request 等待增加而上升，但 batching efficiency 能否抵消一部分增长必须由实验判断。
   KV pool 已物理预分配，峰值显存应接近 C1；可能因 activation、较大 batch graph 和并发
   Vocoder/辅助状态小幅增加，而不会增加 `7 × 59.47 GiB`。
-- 1 RPS：
+- 1 RPS：open-loop 的 offered load 固定为平均 `1 req/s`，所以系统稳定时 measured QPS
+  应接近 1，而不是接近 C1 的 service capacity `2.03 req/s`。用 C1 mean latency 粗估，
+  平均 in-flight 约为 `1 × 0.492 = 0.49`；TTFC p50 预计接近 C1，p95 可能因 Poisson
+  短间隔造成偶发请求重叠而略高。由于 C1 几乎持续有 1 个请求、1 RPS 则经常处于空闲，
+  时间平均 GPU utilization 和 active KV usage 预计低于 C1；但偶发重叠可能让峰值 active
+  KV 高于 C1。启动时预分配的 KV pool 不变，因此 `nvidia-smi` 峰值显存仍应接近 C1/C8，
+  不会随平均 active KV 成比例下降。
 
 ## 固定环境
 
