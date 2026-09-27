@@ -33,8 +33,8 @@
 | c1 | 2 | NVIDIA H100 80GB HBM3 | 32/32 | 2.036 | 8.801 | 0.0332/0.0351 | 0.0695 | 0.480/0.794 | 0.1140 | 100.0 | 70077.0 |
 | c1 | 3 | NVIDIA H100 80GB HBM3 | 32/32 | 2.038 | 8.810 | 0.0322/0.0382 | 0.0706 | 0.480/0.813 | 0.1127 | 100.0 | 70077.0 |
 | c8 | 1 | NVIDIA H100 80GB HBM3 | 32/32 | 4.772 | 20.207 | 0.0647/2.0807 | 0.1467 | 0.880/3.826 | 0.1949 | 96.88 | 70803.0 |
-| c8 | 2 | | | | | | | | | | |
-| c8 | 3 | | | | | | | | | | |
+| c8 | 2 | NVIDIA H100 80GB HBM3 | 32/32 | 9.068 | 38.654 | 0.0670/0.1125 | 0.1452 | 0.743/1.315 | 0.1875 | 100.0 | 70755.0 |
+| c8 | 3 | NVIDIA H100 80GB HBM3 | 32/32 | 8.602 | 36.775 | 0.0716/0.1303 | 0.1468 | 0.766/1.370 | 0.1901 | 100.0 | 70756.0 |
 | rps1 | 1 | | | | | | | | | | |
 | rps1 | 2 | | | | | | | | | | |
 | rps1 | 3 | | | | | | | | | | |
@@ -85,6 +85,17 @@
 - 同一 32 个 request IDs 的 C1 与 C8 音频时长全部不同，逐请求平均绝对差 `0.852 s`、
   最大差 `3.84 s`，但整体平均为 `4.322 s` 与 `4.235 s`。固定 seed 没有在不同 batch
   shape 下提供逐请求 bitwise/batch-invariant 输出。
+- C8 repeat 2/3 都完成 `32/32`，QPS 为 `9.068/8.602`，TTFC p50 为
+  `67.0/71.6 ms`，p95 为 `112.5/130.3 ms`。两个 repeat 的结果接近，但与 repeat 1
+  的 `4.772 QPS`、`2.0807 s TTFC p95` 明显不属于同一性能状态。
+- repeat 1 从第一批 measured requests 提交到 preprocessing，到 server 首次记录其 Prefill
+  约相隔 `1.905 s`；repeat 2/3 对应间隔只有约 `57/61 ms`。因此 repeat 1 的约 2 秒
+  TTFC 主要发生在 `preprocessing submission → scheduler Prefill` 之间，而不是 Prefill
+  之后的 Decode/Vocoder。
+- repeat 2/3 中没有请求 TTFC 超过 `1.8 s`，各有 `25/32` 个请求低于 `100 ms`；首批
+  8 个请求最大 TTFC 分别为 `113.3/135.8 ms`。repeat 1 的首 cohort 长尾未复现。
+- repeat 2/3 的 playback underrun 全为 0，C50/C100/C200 全为 100%；repeat 1 的单个
+  `84.8 ms` underrun 也未复现。
 
 ### 当前解释
 
@@ -105,13 +116,14 @@
 - 三次核心均值的跨 run 极差约为 `0.8%–2.7%`，且控制变量、输出长度和显存一致，
   因此 C1 足够稳定，可以作为同一实验设计下 C8 与 1-RPS 的对照。这里比较的是同型号
   H100 间的 run-to-run repeatability，不代表跨 GPU 型号或跨软件版本可复现。
-- C8 的主要收益是吞吐提高约 `2.35×`，代价是 per-request TTFC、E2E、RTF 和 ITL
-  上升。它展示的是 throughput/latency trade-off，而不是“并发 8 所以免费得到 8 倍 QPS”。
-- 第一 measured cohort 的约 2 秒 TTFC 与后续多数请求低于 100 ms 形成明显双峰。server
-  日志显示 measured phase 开始约 1.9 秒后才出现该 cohort 的 Prefill，且粗粒度日志中的
-  scheduler queue 为 0；这与 Preprocessing/request-build/admission 之前或阶段交接延迟
-  相符，但现有证据不能定位。需要 request-level profiler 拆分，而不能直接称为 Prefill
-  慢或 scheduler queueing。
+- C8 repeat 2/3 的稳态均值约为 `8.835 QPS`，是 C1 均值的 `4.35×`；audio throughput
+  均值 `37.715 audio-s/s`，是 C1 的 `4.30×`。代价是 TTFC p50/p95 均值约
+  `69.3/121.4 ms`，约为 C1 的 `2.10×/3.27×`，RTF p50 约为 `1.66×`。这展示了
+  throughput/latency trade-off，而不是“并发 8 所以免费得到 8 倍 QPS”。
+- repeat 1 是一次明确的 transient/outlier，不能用它单独代表 C8 稳态。日志把异常区间
+  缩小到请求已经提交给 preprocessing 之后、scheduler 首次 Prefill 之前；这个大区间仍
+  包含 Preprocessing、跨 stage 传输、request build 和 admission，普通日志不能继续拆分。
+  `queue-req: 0` 只是 Prefill 日志采样时刻的队列状态，也不能反推之前从未等待。
 - C8 使用了更多 logical KV slots，但 pool tensor 启动时已经分配。额外 `726 MiB` 更可能
   来自较大 batch 的 activation/workspace、并发辅助状态或 allocator reserve，而不是新增
   KV pool。
@@ -133,8 +145,9 @@
   输出 completion token 数，因此只能确认与最终音频时长高度相关，不能拆出每一项因果。
 - GPU utilization 来自 500 ms 抽样，短 kernel 和瞬时峰值会被平滑，不能据此断言 GPU
   有 38.1% 的可直接利用算力。
-- C8 只有一次 repeat，且第一 measured cohort 存在独特的约 2 秒 TTFC。必须用 repeat
-  2/3 判断它是系统性行为还是单次异常。
+- 三次 C8 并非完全同分布：repeat 1 存在未复现的 pre-Prefill transient。只报三次算术
+  均值会把两次稳定运行和一次异常状态混在一起；当前应同时报告全部原始 runs，并把
+  repeat 2/3 作为典型 warm steady-state 范围。
 - C8 与 C1 的逐请求生成时长不一致；可能涉及非 batch-invariant sampling/RNG consumption。
   RTF 能归一化长度，但不能消除第一 cohort 等待或完全消除生成路径差异。
 
@@ -148,8 +161,8 @@
 
 ## 局限与下一步最小验证
 
-- 局限：C8 目前只有 repeat 1，第一 measured cohort 的约 2 秒 TTFC 尚未证明可重复。
-- 下一步只改变的一个变量：保持 C8 配置完全不变，运行 repeat 2/3；若 cohort 长尾重复，
-  再单独做 request-level profiling pass。
-- 预期结果：若是稳定的阶段交接/构建行为，repeat 2/3 也会看到首 cohort TTFC 长尾；若
-  不重复，则把它视为单次运行异常，C8 summary 应用三次统计而不是只报 repeat 1。
+- 局限：现有普通日志只能把 repeat 1 异常定位到较宽的
+  `preprocessing submission → scheduler Prefill` 区间，不能确定具体子阶段。
+- 下一步只改变的一个变量：运行 1-RPS 三次，建立低 offered-load 下的无并发/低排队对照。
+- 另开一次诊断性 request-profile pass 复现 C8；它回答 transient 的阶段归因，不与正式
+  baseline 数字混算。若异常不再出现，也应保留 repeat 1 作为偶发尾延迟证据。

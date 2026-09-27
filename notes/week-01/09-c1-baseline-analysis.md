@@ -1,4 +1,4 @@
-# C1 单请求基线分析
+# C1/C8 基线与并发分析
 
 ## 实验定义
 
@@ -290,3 +290,64 @@ C100 = 32/32 = 100%
 音频时长仍接近（`4.322 s` vs `4.235 s`），因此 aggregate 对比仍有参考价值，但逐请求
 绝对 latency 不再是完全 paired 的 apples-to-apples 比较。RTF 更适合归一化输出长度，
 但仍包含 queue/stage wait。
+
+## C8 三次重复：典型稳态与一次 transient
+
+| Metric | C8 repeat 1 | C8 repeat 2 | C8 repeat 3 | repeat 2/3 均值 |
+|---|---:|---:|---:|---:|
+| QPS | 4.772 | 9.068 | 8.602 | 8.835 |
+| Audio throughput | 20.207 | 38.654 | 36.775 | 37.715 |
+| E2E p50 | 880 ms | 743 ms | 766 ms | 754.5 ms |
+| E2E p95 | 3826 ms | 1315 ms | 1370 ms | 1342.5 ms |
+| TTFC p50 | 64.7 ms | 67.0 ms | 71.6 ms | 69.3 ms |
+| TTFC p95 | 2080.7 ms | 112.5 ms | 130.3 ms | 121.4 ms |
+| RTF p50 | 0.1949 | 0.1875 | 0.1901 | 0.1888 |
+| ITL p95 | 146.7 ms | 145.2 ms | 146.8 ms | 146.0 ms |
+| Peak memory | 70803 MiB | 70755 MiB | 70756 MiB | 70755.5 MiB |
+
+repeat 2/3 很接近，可视为当前实验的典型 warm steady-state。以两次均值和 C1 三次均值
+比较：QPS 提高约 `4.35×`，audio throughput 提高约 `4.30×`；TTFC p50/p95 则提高到
+约 `2.10×/3.27×`，RTF p50 约为 `1.66×`。所以你的四个预测中，QPS、TTFC、RTF 和
+显存的方向都对；RTF 不是只“稍微”升高，而是典型值约增加 66%。
+
+repeat 1 不能代表典型 C8：第一批 8 个请求 TTFC 为 `1.9235–2.0812 s`，但 repeat 2/3
+首批最大值只有 `113.3/135.8 ms`。后两次均无请求超过 `1.8 s`，各有 `25/32` 个请求
+低于 `100 ms`。因此首批约 2 秒不是 continuous batching 的必然代价，而是一次未复现的
+transient。
+
+### 日志把异常定位到了哪里
+
+三次请求都先由 Coordinator 提交给 preprocessing，然后才出现在 Scheduler 的 Prefill
+日志中：
+
+```text
+repeat 1: submission 22:38:37.732 → first Prefill 22:38:39.637 ≈ 1905 ms
+repeat 2: submission 00:42:39.385 → first Prefill 00:42:39.442 ≈   57 ms
+repeat 3: submission 00:49:09.681 → first Prefill 00:49:09.742 ≈   61 ms
+```
+
+所以 repeat 1 的主要额外时间发生在：
+
+```text
+Coordinator submission
+→ Preprocessing
+→ stage transport / request build / admission
+→ Scheduler starts Prefill
+```
+
+这排除了“主要慢在 Prefill 后的 Decode 或 Vocoder”，但不能进一步断言就是
+Preprocessing、request build 或 scheduler queue 中的哪一项。Prefill 日志显示的
+`queue-req: 0` 只是该日志时刻的快照；请求可能尚未进入 scheduler queue，也可能已经
+出队，不能用它证明整个区间不存在等待。精确归因需要 request event profiler。
+
+### 为什么不直接对三次取平均
+
+如果把三次直接求均值，会得到一个既不像 repeat 1、也不像 repeat 2/3 的混合状态。
+性能实验应保留两个结论：
+
+1. typical steady-state：用相互接近的 repeat 2/3 给出范围或均值；
+2. tail reliability：repeat 1 证明 warmup 后仍可能出现一次较大的 pre-Prefill transient。
+
+repeat 2/3 的 playback underrun 全为 0，repeat 1 唯一的 `84.8 ms` underrun 也未复现。
+峰值显存三次为 `70803/70755/70756 MiB`，仍只比 C1 高约 0.7 GiB，支持 KV pool 已预分配
+且共享的解释。
