@@ -42,8 +42,8 @@
 | c8 | 2 | NVIDIA H100 80GB HBM3 | 32/32 | 9.068 | 38.654 | 0.0670/0.1125 | 0.1452 | 0.743/1.315 | 0.1875 | 100.0 | 70755.0 |
 | c8 | 3 | NVIDIA H100 80GB HBM3 | 32/32 | 8.602 | 36.775 | 0.0716/0.1303 | 0.1468 | 0.766/1.370 | 0.1901 | 100.0 | 70756.0 |
 | rps1 | 1 | NVIDIA H100 80GB HBM3 | 60/60 | 1.149 | 5.280 | 0.0336/0.0601 | 0.0832 | 0.518/1.898 | 0.1171 | 96.67 | 70127.0 |
-| rps1 | 2 | | | | | | | | | | |
-| rps1 | 3 | | | | | | | | | | |
+| rps1 | 2 | NVIDIA H100 80GB HBM3 | 60/60 | 0.869 | 3.992 | 0.0407/0.0746 | 0.0925 | 0.531/1.160 | 0.1242 | 96.67 | 70131.0 |
+| rps1 | 3 | NVIDIA H100 80GB HBM3 | 60/60 | 0.858 | 3.925 | 0.0294/1.2890 | 0.0789 | 0.492/2.621 | 0.1093 | 96.67 | 70223.0 |
 
 ## 事实与解释分离
 
@@ -117,6 +117,21 @@
   `1 RPS` 不等于“最大并发 1”。
 - 峰值显存 `70127 MiB`，只比 C1 `70077 MiB` 高 `50 MiB`；预分配 KV pool 使显存
   不会随平均 active requests 大幅下降。
+- 1-RPS 三次共完成 `180/180`、0 失败；QPS 为 `1.149/0.869/0.858`。这是有限 Poisson
+  arrival traces 的 realized rate 差异，三轮 measured horizon 分别约
+  `52.24/69.09/69.90 s`，不应误判为服务 capacity 在三轮间变化。
+- 三次 TTFC p50 为 `33.6/40.7/29.4 ms`，典型请求始终接近 C1；低于 `100 ms` 的请求
+  分别为 `57/57/55`。但 TTFC 超过 1 秒的请求分别有 `2/1/4` 个，因此 p95/p99 对异常
+  在 60 个样本中的排名非常敏感。
+- 三次都恰有最前面的 request 0/1 出现严重 playback underrun，最大值分别约为
+  `1.72–1.83 s`、`2.36 s` 和 `1.41–2.25 s`，所以每轮 C50/C100/C200 都固定为
+  `58/60 = 96.67%`。这已经是可重复的 measured-phase early transient，而非随机单次噪声。
+- 三次日志共同模式是：单请求 warmup 结束；measured request 0/1 很快 Prefill 并开始生成；
+  随后出现约 2–2.7 秒的无 Decode/Prefill 进展窗口；窗口内到达的新请求累积，恢复后进入
+  Prefill。证据支持“warmup 没覆盖首次并发路径”这一优先假设，但还不能确认具体 lazy
+  initialization 或阻塞点。
+- 1-RPS measured GPU 平均 utilization 为 `28.76/22.91/24.37%`，明显低于 C1；峰值
+  utilization 仍为 `76–78%`。峰值显存为 `70127/70131/70223 MiB`，仍接近 C1。
 
 ### 当前解释
 
@@ -148,9 +163,9 @@
 - 1-RPS 的中心指标支持“低负载基本无排队”：TTFC p50 与 C1 相同，RTF p50
   `0.1171` 也接近 C1 的 `0.1140`。但两个 early outliers 说明“平均负载低”不等于
   “每个请求都无等待”，尤其不能只凭 p50 得出可靠性结论。
-- 1-RPS repeat 1 的异常同样出现在 measured phase 很早，并伴随一个约 2 秒的服务日志
-  空窗。它可能与首次出现多请求重叠时的阶段状态有关，但目前普通日志仍不足以把它命名为
-  scheduler queueing、lazy initialization 或具体某个 stage 的阻塞。
+- 1-RPS 三次异常都出现在 measured phase 开头，并伴随约 2–2.7 秒的服务日志空窗；而
+  warmup 只有一个请求。最值得先验证的机制是：单请求 warmup 没有触发首次多请求并发
+  路径所需的一次性工作。这个结论仍是 inference，不应在没有对照实验时直接写成根因。
 - C8 使用了更多 logical KV slots，但 pool tensor 启动时已经分配。额外 `726 MiB` 更可能
   来自较大 batch 的 activation/workspace、并发辅助状态或 allocator reserve，而不是新增
   KV pool。
@@ -175,8 +190,9 @@
 - 三次 C8 并非完全同分布：repeat 1 存在未复现的 pre-Prefill transient。只报三次算术
   均值会把两次稳定运行和一次异常状态混在一起；当前应同时报告全部原始 runs，并把
   repeat 2/3 作为典型 warm steady-state 范围。
-- 1-RPS 当前只有一次 repeat，且 2/60 个请求受到 early transient 影响；p95 尚较稳健，
-  p99、mean、E2E p95 和 continuity 会被少量异常显著影响，必须由 repeat 2/3 判断。
+- 每轮只有 60 个请求，少量 early transient 会跨越 p95 的 5% 边界：repeat 1/2 各只有
+  3 个请求 TTFC 大于 100 ms，p95 仍低；repeat 3 有 5 个，p95 便跃升到 `1.289 s`。
+  因此这里必须报告计数和原始尾部，不能只比较单个 percentile。
 - C8 与 C1 的逐请求生成时长不一致；可能涉及非 batch-invariant sampling/RNG consumption。
   RTF 能归一化长度，但不能消除第一 cohort 等待或完全消除生成路径差异。
 
@@ -192,7 +208,9 @@
 
 - 局限：现有普通日志只能把 repeat 1 异常定位到较宽的
   `preprocessing submission → scheduler Prefill` 区间，不能确定具体子阶段。
-- 下一步只改变的一个变量：保持 1-RPS 配置不变运行 repeat 2/3，验证 early transient
-  和两个 playback underrun 是否复现。
+- 下一步最小诊断：保持 1-RPS measured workload 不变，只把 warmup 从 1 个请求改为一次
+  并发 warmup（例如 8 个请求），检查 early pause 和 request 0/1 underrun 是否消失。
+- 若并发 warmup 消除异常，再用 request-level profiling 定位首次并发路径的一次性工作；
+  若仍存在，则 profiling 应覆盖从 preprocessing 到 Decode/Vocoder 的整个暂停窗口。
 - 另开一次诊断性 request-profile pass 复现 C8；它回答 transient 的阶段归因，不与正式
   baseline 数字混算。若异常不再出现，也应保留 repeat 1 作为偶发尾延迟证据。

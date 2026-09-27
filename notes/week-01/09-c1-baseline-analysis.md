@@ -414,3 +414,48 @@ C50/C100/C200    = 96.67% / 96.67% / 96.67%
 p50/p95 描述了绝大多数低负载请求的良好体验；p99 与 continuity 则揭示了少量严重暂停。
 普通日志还不能判断根因是某个 stage 的 lazy initialization、阶段阻塞还是其他运行时事件。
 repeat 2/3 的任务是判断它是否像 C8 repeat 1 一样不再复现。
+
+## 1-RPS 三次重复后的结论
+
+| Metric | Repeat 1 | Repeat 2 | Repeat 3 |
+|---|---:|---:|---:|
+| QPS | 1.149 | 0.869 | 0.858 |
+| Measured horizon | 52.24 s | 69.09 s | 69.90 s |
+| TTFC p50 | 33.6 ms | 40.7 ms | 29.4 ms |
+| TTFC p95 | 60.1 ms | 74.6 ms | 1289.0 ms |
+| TTFC p99 | 1647.6 ms | 677.5 ms | 2334.5 ms |
+| E2E p50 | 518 ms | 531 ms | 492 ms |
+| RTF p50 | 0.1171 | 0.1242 | 0.1093 |
+| C200 | 96.67% | 96.67% | 96.67% |
+| Mean GPU utilization | 28.76% | 22.91% | 24.37% |
+| Peak memory | 70127 MiB | 70131 MiB | 70223 MiB |
+
+QPS 的差异主要来自有限 Poisson arrival trace：60 个请求被安排在不同长度的随机时间窗，
+系统只是跟随到达速度完成请求。它不说明 repeat 1 的服务 capacity 比 repeat 2/3 高。
+三次 `180/180` 全部成功，TTFC p50、E2E p50 和 RTF p50 都接近 C1，说明低 offered
+load 下的 typical path 健康。
+
+但是 early transient 在三次中都复现：每次恰好是 measured request 0 和 1 已经开始生成
+后，服务出现约 2–2.7 秒无 Prefill/Decode 进展的窗口。这两个请求每轮都发生大于 1 秒的
+playback underrun，所以三轮 C200 都是：
+
+```text
+58 / 60 = 96.67%
+```
+
+暂停期间继续到达的新请求会等待，并在服务恢复后 Prefill。因此不同 Poisson trace 决定了
+有多少请求的 TTFC 被暂停覆盖：三轮 TTFC 大于 1 秒的数量分别是 `2/1/4`。这解释了为何
+repeat 1/2 的 p95 仍很低，而 repeat 3 的 p95 突然成为 `1.289 s`：
+
+```text
+60 requests × 5% = 3 requests
+```
+
+尾部异常恰好在 p95 排名边界附近，一个或两个额外受影响请求就能让 p95 跳变。这里报告
+`count above threshold + p99 + continuity` 比只报 p95 更可靠。
+
+三轮都只做了一个单请求 warmup，而异常在首次出现 measured 并发之后发生。当前最强但
+尚未证实的假设是：single-request warmup 没覆盖首次多请求路径的一次性初始化或阻塞。
+最小因果实验不是继续重复同一配置，而是保持 measured `1 RPS` 不变，只把 warmup 改成
+一次并发 warmup。如果异常消失，才有证据支持 warmup coverage；具体代码位置仍需要
+request-level profiling。

@@ -34,6 +34,7 @@
 30. 完成 C8 repeat 1：观察 QPS 提升 `2.35×`、峰值显存仅增加 `726 MiB`，同时识别首 measured cohort 的约 2 秒 TTFC 长尾、ITL/continuity 退化和 batch-dependent output length 限制。
 31. 完成 C8 三次重复：repeat 2/3 稳定在 `8.602–9.068 QPS`、`112.5–130.3 ms TTFC p95`；确认 repeat 1 首 cohort 的约 2 秒长尾未复现，并用日志将异常缩小到 `preprocessing submission → scheduler Prefill` 区间。
 32. 完成 1-RPS repeat 1：验证 arrival-limited throughput、TTFC p50 接近 C1、平均 GPU utilization 更低且显存接近；同时识别 2/60 个 early TTFC outliers 与 2 个 playback underrun 来自同一个约 2 秒服务暂停窗口。
+33. 完成 1-RPS 三次重复：共 `180/180` 成功，确认 typical path 接近 C1，但 measured request 0/1 每轮都遭遇可重复的 1–2 秒级 playback underrun；理解有限 Poisson trace 的 realized QPS 波动和 p95 排名边界效应，并形成“单请求 warmup 未覆盖首次并发路径”的待验证假设。
 
 ## 当前掌握程度
 
@@ -54,7 +55,7 @@
 
 ## 下一步
 
-1. 运行 1-RPS repeat 2/3，判断 repeat 1 的 early transient 与 playback underrun 是否复现。
+1. 保持 measured 1-RPS 不变，只将 warmup 改为并发 warmup，验证 early transient 是否来自 warmup coverage。
 2. 单独做一次 request-level profiling pass，拆分 Preprocessing、request build、queue wait 与 Prefill forward；仅在需要时再开 Torch Profiler。
 3. 完成权重与 active-request KV bytes 手算，并对比 `gpu-samples.csv`，解释权重、CUDA Graph、activation、allocator 和 KV pool。
 4. 完成两个既有 PR 复盘，更新 Week 1 周报和记分卡，通过后进入 Week 2。
